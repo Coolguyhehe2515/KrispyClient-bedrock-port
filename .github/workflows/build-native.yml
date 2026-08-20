@@ -5,40 +5,45 @@ on:
 
 jobs:
   build-native:
-    name: Build Android ARM64 Native Library
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Android NDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install Android NDK
         run: |
-          sdkmanager "ndk;27.2.12479018"
+          sdkmanager "platform-tools" "ndk;27.2.12479018"
 
-      - name: Build native library
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
+      - name: Build ARM64 native library
         run: |
+          export NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          export TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
           mkdir -p build/arm64-v8a
 
-          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++" \
+          "$TOOLCHAIN/clang++" \
             --target=aarch64-linux-android28 \
             -shared \
             -fPIC \
             -O2 \
-            -o build/arm64-v8a/libkrispyclient.so \
-            native/krispyclient.cpp
+            native/krispyclient.cpp \
+            -o build/arm64-v8a/libkrispyclient.so
 
-      - name: Verify library
+          cp "$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" \
+            build/arm64-v8a/libc++_shared.so
+
+      - name: Verify libraries
         run: |
-          file build/arm64-v8a/libkrispyclient.so
+          ls -lh build/arm64-v8a/
+          file build/arm64-v8a/*.so
 
-      - name: Upload native library
+      - name: Upload native libraries
         uses: actions/upload-artifact@v4
         with:
           name: krispyclient-native-arm64
-          path: build/arm64-v8a/libkrispyclient.so
+          path: build/arm64-v8a/
+          if-no-files-found: error
