@@ -1,0 +1,230 @@
+name: Build KrispyClient Native
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-native:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 12266719
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: true
+          packages: |
+            platform-tools
+            platforms;android-28
+            build-tools;35.0.0
+            ndk;27.2.12479018
+
+      - name: Show SDK information
+        shell: bash
+        run: |
+          set -e
+
+          echo "================================"
+          echo "ANDROID SDK"
+          echo "================================"
+
+          echo "ANDROID_HOME=$ANDROID_HOME"
+
+          echo
+          echo "SDK directory:"
+          ls -la "$ANDROID_HOME"
+
+          echo
+          echo "================================"
+          echo "NDK"
+          echo "================================"
+
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+
+          test -d "$NDK"
+
+          echo "NDK=$NDK"
+          ls -la "$ANDROID_HOME/ndk"
+
+          echo
+          echo "NDK source.properties:"
+          cat "$NDK/source.properties"
+
+      - name: Check compiler
+        shell: bash
+        run: |
+          set -e
+
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+
+          CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++"
+
+          echo "================================"
+          echo "CLANG"
+          echo "================================"
+
+          echo "Compiler:"
+          echo "$CLANG"
+
+          test -f "$CLANG"
+
+          "$CLANG" --version
+
+      - name: Check Android libraries
+        shell: bash
+        run: |
+          set -e
+
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+
+          SYSROOT="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+
+          echo "================================"
+          echo "ANDROID SYSROOT"
+          echo "================================"
+
+          test -d "$SYSROOT"
+
+          echo "$SYSROOT"
+
+          echo
+          echo "Checking ARM64 libc++..."
+
+          LIBCXX="$SYSROOT/usr/lib/aarch64-linux-android/libc++_shared.so"
+
+          test -f "$LIBCXX"
+
+          ls -lh "$LIBCXX"
+
+      - name: Check native source
+        shell: bash
+        run: |
+          set -e
+
+          echo "================================"
+          echo "NATIVE SOURCE"
+          echo "================================"
+
+          if [ ! -f "native/krispyclient.cpp" ]; then
+            echo "ERROR: native/krispyclient.cpp was not found."
+            echo
+            echo "Repository files:"
+            find . -maxdepth 4 -type f | sort
+            exit 1
+          fi
+
+          echo "Found:"
+          ls -lh native/krispyclient.cpp
+
+      - name: Prepare build directory
+        shell: bash
+        run: |
+          set -e
+
+          rm -rf build
+
+          mkdir -p build/arm64-v8a
+
+          echo "Build directory:"
+          find build -maxdepth 3 -type d
+
+      - name: Build ARM64 native library
+        shell: bash
+        run: |
+          set -e
+
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          echo "================================"
+          echo "BUILDING KRISPYCLIENT"
+          echo "================================"
+
+          echo "Target: arm64-v8a"
+          echo "API: Android 28"
+          echo "Compiler: clang++"
+          echo
+
+          "$TOOLCHAIN/clang++" \
+            --target=aarch64-linux-android28 \
+            -shared \
+            -fPIC \
+            -O2 \
+            -std=c++17 \
+            native/krispyclient.cpp \
+            -o build/arm64-v8a/libkrispyclient.so \
+            -landroid \
+            -llog \
+            -lEGL \
+            -lGLESv3
+
+          echo
+          echo "================================"
+          echo "BUILD SUCCESSFUL"
+          echo "================================"
+
+          ls -lh build/arm64-v8a/libkrispyclient.so
+
+      - name: Copy libc++ shared library
+        shell: bash
+        run: |
+          set -e
+
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+
+          LIBCXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+
+          echo "Copying libc++..."
+
+          cp \
+            "$LIBCXX" \
+            build/arm64-v8a/libc++_shared.so
+
+          echo
+          echo "Libraries:"
+          ls -lh build/arm64-v8a/
+
+      - name: Verify output
+        shell: bash
+        run: |
+          set -e
+
+          echo "================================"
+          echo "GENERATED FILES"
+          echo "================================"
+
+          ls -lh build/arm64-v8a/
+
+          echo
+          echo "================================"
+          echo "FILE INFORMATION"
+          echo "================================"
+
+          file build/arm64-v8a/*.so
+
+          echo
+          echo "================================"
+          echo "ELF INFORMATION"
+          echo "================================"
+
+          readelf -h build/arm64-v8a/libkrispyclient.so
+
+          echo
+          echo "================================"
+          echo "ARCHITECTURE"
+          echo "================================"
+
+          readelf -h build/arm64-v8a/libkrispyclient.so | grep -E \
+            "Class:|Machine:|Type:"
+
+      - name: Upload native libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: krispyclient-native-arm64
+          path: build/arm64-v8a/
+          if-no-files-found: error
