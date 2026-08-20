@@ -12,125 +12,96 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           cmdline-tools-version: 12266719
           accept-android-sdk-licenses: true
-          log-accepted-android-sdk-licenses: true
-          packages: |
-            platform-tools
-            platforms;android-28
-            build-tools;35.0.0
-            ndk;27.2.12479018
+          log-accepted-android-sdk-licenses: false
+          packages: ''
 
-      - name: Show SDK information
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK packages
         shell: bash
         run: |
           set -e
 
-          echo "================================"
-          echo "ANDROID SDK"
-          echo "================================"
-
+          echo "=== Android SDK ==="
           echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
-          echo
-          echo "SDK directory:"
-          ls -la "$ANDROID_HOME"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
 
-          echo
-          echo "================================"
-          echo "NDK"
-          echo "================================"
+          if [ ! -f "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+
+          echo "sdkmanager=$SDKMANAGER"
+
+          "$SDKMANAGER" --version
+
+          echo "=== Installing required packages ==="
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-28" \
+            "build-tools;35.0.0" \
+            "ndk;27.2.12479018"
+
+      - name: Verify Android NDK
+        shell: bash
+        run: |
+          set -e
 
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
+
+          echo "=== NDK ==="
+          echo "NDK=$NDK"
 
           test -d "$NDK"
 
-          echo "NDK=$NDK"
-          ls -la "$ANDROID_HOME/ndk"
-
-          echo
-          echo "NDK source.properties:"
           cat "$NDK/source.properties"
 
-      - name: Check compiler
-        shell: bash
-        run: |
-          set -e
-
-          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          echo
+          echo "=== LLVM ==="
 
           CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++"
-
-          echo "================================"
-          echo "CLANG"
-          echo "================================"
-
-          echo "Compiler:"
-          echo "$CLANG"
 
           test -f "$CLANG"
 
           "$CLANG" --version
 
-      - name: Check Android libraries
+      - name: Verify native source
         shell: bash
         run: |
           set -e
 
-          NDK="$ANDROID_HOME/ndk/27.2.12479018"
-
-          SYSROOT="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
-
-          echo "================================"
-          echo "ANDROID SYSROOT"
-          echo "================================"
-
-          test -d "$SYSROOT"
-
-          echo "$SYSROOT"
+          echo "=== Repository ==="
+          pwd
 
           echo
-          echo "Checking ARM64 libc++..."
+          echo "=== Native directory ==="
 
-          LIBCXX="$SYSROOT/usr/lib/aarch64-linux-android/libc++_shared.so"
-
-          test -f "$LIBCXX"
-
-          ls -lh "$LIBCXX"
-
-      - name: Check native source
-        shell: bash
-        run: |
-          set -e
-
-          echo "================================"
-          echo "NATIVE SOURCE"
-          echo "================================"
-
-          if [ ! -f "native/krispyclient.cpp" ]; then
-            echo "ERROR: native/krispyclient.cpp was not found."
-            echo
-            echo "Repository files:"
-            find . -maxdepth 4 -type f | sort
+          if [ ! -d native ]; then
+            echo "ERROR: native directory does not exist."
+            find . -maxdepth 3 -type f | sort
             exit 1
           fi
 
-          echo "Found:"
-          ls -lh native/krispyclient.cpp
+          ls -la native
 
-      - name: Prepare build directory
-        shell: bash
-        run: |
-          set -e
+          echo
+          echo "=== Source ==="
 
-          rm -rf build
+          test -f native/krispyclient.cpp
 
-          mkdir -p build/arm64-v8a
-
-          echo "Build directory:"
-          find build -maxdepth 3 -type d
+          wc -l native/krispyclient.cpp
 
       - name: Build ARM64 native library
         shell: bash
@@ -141,14 +112,11 @@ jobs:
 
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
-          echo "================================"
-          echo "BUILDING KRISPYCLIENT"
-          echo "================================"
+          mkdir -p build/arm64-v8a
 
-          echo "Target: arm64-v8a"
-          echo "API: Android 28"
-          echo "Compiler: clang++"
-          echo
+          echo "======================================"
+          echo "Building KrispyClient"
+          echo "======================================"
 
           "$TOOLCHAIN/clang++" \
             --target=aarch64-linux-android28 \
@@ -164,11 +132,7 @@ jobs:
             -lGLESv3
 
           echo
-          echo "================================"
-          echo "BUILD SUCCESSFUL"
-          echo "================================"
-
-          ls -lh build/arm64-v8a/libkrispyclient.so
+          echo "BUILD SUCCESS"
 
       - name: Copy libc++ shared library
         shell: bash
@@ -179,48 +143,44 @@ jobs:
 
           LIBCXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
 
-          echo "Copying libc++..."
+          test -f "$LIBCXX"
 
           cp \
             "$LIBCXX" \
             build/arm64-v8a/libc++_shared.so
-
-          echo
-          echo "Libraries:"
-          ls -lh build/arm64-v8a/
 
       - name: Verify output
         shell: bash
         run: |
           set -e
 
-          echo "================================"
-          echo "GENERATED FILES"
-          echo "================================"
+          echo "======================================"
+          echo "Generated libraries"
+          echo "======================================"
 
           ls -lh build/arm64-v8a/
 
           echo
-          echo "================================"
-          echo "FILE INFORMATION"
-          echo "================================"
+          echo "======================================"
+          echo "File type"
+          echo "======================================"
 
           file build/arm64-v8a/*.so
 
           echo
-          echo "================================"
-          echo "ELF INFORMATION"
-          echo "================================"
+          echo "======================================"
+          echo "ELF"
+          echo "======================================"
 
           readelf -h build/arm64-v8a/libkrispyclient.so
 
           echo
-          echo "================================"
-          echo "ARCHITECTURE"
-          echo "================================"
+          echo "======================================"
+          echo "Architecture"
+          echo "======================================"
 
-          readelf -h build/arm64-v8a/libkrispyclient.so | grep -E \
-            "Class:|Machine:|Type:"
+          readelf -h build/arm64-v8a/libkrispyclient.so | \
+            grep -E "Class:|Machine:|Type:"
 
       - name: Upload native libraries
         uses: actions/upload-artifact@v4
