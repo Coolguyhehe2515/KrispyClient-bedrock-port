@@ -17,26 +17,12 @@ jobs:
           cmdline-tools-version: 12266719
           accept-android-sdk-licenses: true
           log-accepted-android-sdk-licenses: true
-
-      - name: Accept Android SDK licenses
-        shell: bash
-        run: |
-          set -e
-
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-
-          echo "Android SDK licenses processed."
-
-      - name: Install required Android SDK packages
-        shell: bash
-        run: |
-          set -e
-
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-28" \
-            "build-tools;35.0.0" \
-            "ndk;27.2.12479018"
+          packages: |
+            tools
+            platform-tools
+            platforms;android-28
+            build-tools;35.0.0
+            ndk;27.2.12479018
 
       - name: Verify Android SDK and NDK
         shell: bash
@@ -50,19 +36,29 @@ jobs:
           echo "NDK=$NDK"
           echo "TOOLCHAIN=$TOOLCHAIN"
 
-          echo ""
           echo "=== Android SDK ==="
-          sdkmanager --list_installed || true
+          ls -la "$ANDROID_HOME"
 
-          echo ""
-          echo "=== Checking NDK ==="
+          echo "=== NDK ==="
           test -d "$NDK"
+          ls -la "$NDK"
 
-          echo ""
-          echo "=== Checking Clang ==="
-          test -x "$TOOLCHAIN/clang++"
-
+          echo "=== Clang ==="
+          test -f "$TOOLCHAIN/clang++"
           "$TOOLCHAIN/clang++" --version
+
+      - name: Check source file
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== Native source ==="
+
+          test -f native/krispyclient.cpp
+
+          ls -lh native/krispyclient.cpp
+
+          echo "Source file found."
 
       - name: Build ARM64 native library
         shell: bash
@@ -74,7 +70,7 @@ jobs:
 
           mkdir -p build/arm64-v8a
 
-          echo "=== Building KrispyClient ARM64 ==="
+          echo "=== Building libkrispyclient.so ==="
 
           "$TOOLCHAIN/clang++" \
             --target=aarch64-linux-android28 \
@@ -88,6 +84,8 @@ jobs:
             -llog \
             -lEGL \
             -lGLESv3
+
+          echo "Build completed."
 
       - name: Copy libc++ shared library
         shell: bash
@@ -104,6 +102,8 @@ jobs:
             "$LIBCXX" \
             build/arm64-v8a/libc++_shared.so
 
+          echo "libc++_shared.so copied."
+
       - name: Verify libraries
         shell: bash
         run: |
@@ -112,17 +112,19 @@ jobs:
           echo "=== Generated libraries ==="
           ls -lh build/arm64-v8a/
 
-          echo ""
+          echo
           echo "=== File information ==="
           file build/arm64-v8a/*.so
 
-          echo ""
+          echo
           echo "=== ELF information ==="
           readelf -h build/arm64-v8a/libkrispyclient.so
 
-          echo ""
+          echo
           echo "=== Architecture check ==="
-          readelf -h build/arm64-v8a/libkrispyclient.so | grep -E "Class|Machine"
+
+          readelf -h build/arm64-v8a/libkrispyclient.so | grep -E \
+            "Class:|Machine:|Type:"
 
       - name: Upload native libraries
         uses: actions/upload-artifact@v4
