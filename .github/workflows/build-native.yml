@@ -18,9 +18,19 @@ jobs:
           accept-android-sdk-licenses: true
           log-accepted-android-sdk-licenses: true
 
-      - name: Install required Android SDK packages
+      - name: Accept Android SDK licenses
+        shell: bash
         run: |
-          yes | sdkmanager --licenses || true
+          set -e
+
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
+          echo "Android SDK licenses processed."
+
+      - name: Install required Android SDK packages
+        shell: bash
+        run: |
+          set -e
 
           sdkmanager \
             "platform-tools" \
@@ -28,24 +38,43 @@ jobs:
             "build-tools;35.0.0" \
             "ndk;27.2.12479018"
 
-      - name: Verify Android NDK
+      - name: Verify Android SDK and NDK
+        shell: bash
         run: |
+          set -e
+
           export NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          export TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "NDK=$NDK"
+          echo "TOOLCHAIN=$TOOLCHAIN"
 
+          echo ""
+          echo "=== Android SDK ==="
+          sdkmanager --list_installed || true
+
+          echo ""
+          echo "=== Checking NDK ==="
           test -d "$NDK"
 
-          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++" \
-            --version
+          echo ""
+          echo "=== Checking Clang ==="
+          test -x "$TOOLCHAIN/clang++"
+
+          "$TOOLCHAIN/clang++" --version
 
       - name: Build ARM64 native library
+        shell: bash
         run: |
+          set -e
+
           export NDK="$ANDROID_HOME/ndk/27.2.12479018"
           export TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
           mkdir -p build/arm64-v8a
+
+          echo "=== Building KrispyClient ARM64 ==="
 
           "$TOOLCHAIN/clang++" \
             --target=aarch64-linux-android28 \
@@ -60,20 +89,40 @@ jobs:
             -lEGL \
             -lGLESv3
 
+      - name: Copy libc++ shared library
+        shell: bash
+        run: |
+          set -e
+
+          export NDK="$ANDROID_HOME/ndk/27.2.12479018"
+
+          LIBCXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+
+          test -f "$LIBCXX"
+
           cp \
-            "$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" \
+            "$LIBCXX" \
             build/arm64-v8a/libc++_shared.so
 
       - name: Verify libraries
+        shell: bash
         run: |
+          set -e
+
           echo "=== Generated libraries ==="
           ls -lh build/arm64-v8a/
 
+          echo ""
           echo "=== File information ==="
           file build/arm64-v8a/*.so
 
+          echo ""
           echo "=== ELF information ==="
           readelf -h build/arm64-v8a/libkrispyclient.so
+
+          echo ""
+          echo "=== Architecture check ==="
+          readelf -h build/arm64-v8a/libkrispyclient.so | grep -E "Class|Machine"
 
       - name: Upload native libraries
         uses: actions/upload-artifact@v4
