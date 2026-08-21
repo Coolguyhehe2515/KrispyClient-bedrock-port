@@ -823,15 +823,15 @@ Java_com_krispyclient_launcher_NativeBridge_nativeDestroy(
     }
 }
 
-Setelah build, target test-nya sekarang bukan lagi sekadar layar hitam. Harus muncul segitiga biru di tengah layar.
+//setelah build, target test-nya sekarang bukan lagi sekadar layar hitam. Harus muncul segitiga biru di tengah layar.
 
-Kalau segitiganya muncul, berarti kita sudah berhasil membuktikan:
+//kalau segitiganya muncul, berarti kita sudah berhasil membuktikan:
 
-- EGL context ES 3 berhasil dibuat
-- shader compilation berhasil
-- shader linking berhasil
-- VAO/VBO berhasil
-- OpenGL draw call berhasil
-- "eglSwapBuffers()" berhasil
+//- EGL context ES 3 berhasil dibuat
+//- shader compilation berhasil
+//- shader linking berhasil
+//- VAO/VBO berhasil
+//- OpenGL draw call berhasil
+//- "eglSwapBuffers()" berhasil
 
-Kalau gagal, kirim baris Logcat yang "KrispyClientNative"-nya, terutama "Shader compilation failed", "Program linking failed", atau "EGL ... failed".
+//Kalau gagal, kirim baris Logcat yang "KrispyClientNative"-nya, terutama "Shader compilation failed", "Program linking failed", atau "EGL ... failed".
