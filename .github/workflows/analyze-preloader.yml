@@ -1,0 +1,68 @@
+name: Analyze libpreloader.so
+
+on:
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install ELF tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils
+
+      - name: Find libpreloader.so
+        run: |
+          find . -type f -name "libpreloader.so" -print
+
+      - name: Analyze ELF header
+        run: |
+          FILE=$(find . -type f -name "libpreloader.so" | head -n 1)
+
+          if [ -z "$FILE" ]; then
+            echo "libpreloader.so not found"
+            exit 1
+          fi
+
+          echo "Analyzing: $FILE"
+          readelf -h "$FILE" > elf-header.txt
+
+      - name: Analyze dependencies
+        run: |
+          FILE=$(find . -type f -name "libpreloader.so" | head -n 1)
+          readelf -d "$FILE" > elf-dependencies.txt
+
+      - name: Extract useful symbols
+        run: |
+          FILE=$(find . -type f -name "libpreloader.so" | head -n 1)
+
+          readelf -Ws "$FILE" > symbols.txt
+
+          grep -Ei \
+            "JNI|Java_|dlopen|dlsym|hook|preload|loadLibrary|Minecraft|egl|pthread" \
+            symbols.txt > useful-symbols.txt || true
+
+      - name: Extract strings
+        run: |
+          FILE=$(find . -type f -name "libpreloader.so" | head -n 1)
+
+          strings -a "$FILE" > strings.txt
+
+          grep -Ei \
+            "JNI|Java_|dlopen|dlsym|hook|preload|Minecraft|libminecraft|egl|launch|load" \
+            strings.txt > useful-strings.txt || true
+
+      - name: Upload analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: libpreloader-analysis
+          path: |
+            elf-header.txt
+            elf-dependencies.txt
+            useful-symbols.txt
+            useful-strings.txt
