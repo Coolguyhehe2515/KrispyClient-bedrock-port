@@ -336,6 +336,17 @@ static void destroyRenderer() {
     LOGI("Native renderer destroyed");
 }
 
+
+/*
+ * Forward declaration.
+ *
+ * initEgl() calls destroyEgl() when renderer
+ * initialization fails, but the actual function
+ * implementation is located below initEgl().
+ */
+static void destroyEgl();
+
+
 static bool initEgl() {
 
     if (g_initialized) {
@@ -558,6 +569,7 @@ static bool initEgl() {
     return true;
 }
 
+
 static void destroyEgl() {
 
     if (g_display == EGL_NO_DISPLAY) {
@@ -602,6 +614,7 @@ static void destroyEgl() {
 
     LOGI("EGL destroyed");
 }
+
 
 static void renderFrame() {
 
@@ -653,6 +666,7 @@ static void renderFrame() {
     }
 }
 
+
 extern "C"
 JNIEXPORT jstring JNICALL
 Java_com_krispyclient_launcher_NativeBridge_getNativeVersion(
@@ -664,6 +678,7 @@ Java_com_krispyclient_launcher_NativeBridge_getNativeVersion(
         "KrispyClient Native Renderer 0.4"
     );
 }
+
 
 extern "C"
 JNIEXPORT void JNICALL
@@ -732,6 +747,7 @@ Java_com_krispyclient_launcher_NativeBridge_nativeSurfaceCreated(
     renderFrame();
 }
 
+
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_krispyclient_launcher_NativeBridge_nativeSurfaceChanged(
@@ -752,6 +768,7 @@ Java_com_krispyclient_launcher_NativeBridge_nativeSurfaceChanged(
 
     renderFrame();
 }
+
 
 extern "C"
 JNIEXPORT void JNICALL
@@ -776,6 +793,7 @@ Java_com_krispyclient_launcher_NativeBridge_nativeSurfaceDestroyed(
     }
 }
 
+
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_krispyclient_launcher_NativeBridge_nativeResume(
@@ -788,6 +806,7 @@ Java_com_krispyclient_launcher_NativeBridge_nativeResume(
     );
 }
 
+
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_krispyclient_launcher_NativeBridge_nativePause(
@@ -799,6 +818,7 @@ Java_com_krispyclient_launcher_NativeBridge_nativePause(
         "KrispyClient native pause"
     );
 }
+
 
 extern "C"
 JNIEXPORT void JNICALL
@@ -822,16 +842,3 @@ Java_com_krispyclient_launcher_NativeBridge_nativeDestroy(
         g_window = nullptr;
     }
 }
-
-//setelah build, target test-nya sekarang bukan lagi sekadar layar hitam. Harus muncul segitiga biru di tengah layar.
-
-//kalau segitiganya muncul, berarti kita sudah berhasil membuktikan:
-
-//- EGL context ES 3 berhasil dibuat
-//- shader compilation berhasil
-//- shader linking berhasil
-//- VAO/VBO berhasil
-//- OpenGL draw call berhasil
-//- "eglSwapBuffers()" berhasil
-
-//Kalau gagal, kirim baris Logcat yang "KrispyClientNative"-nya, terutama "Shader compilation failed", "Program linking failed", atau "EGL ... failed".
