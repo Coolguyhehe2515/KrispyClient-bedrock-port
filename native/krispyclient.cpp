@@ -7,6 +7,8 @@
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
 
+#include <cstdio>
+
 #define LOG_TAG "KrispyClientNative"
 
 #define LOGI(...) \
@@ -30,23 +32,41 @@ static GLuint g_vbo = 0;
 
 static bool g_initialized = false;
 
+
+// ============================================================
+// Forward declarations
+// ============================================================
+
+static void destroyEgl();
+static void destroyRenderer();
+static void renderFrame();
+
+
+// ============================================================
+// Shaders
+// ============================================================
+
 static const char* VERTEX_SHADER = R"(
 #version 300 es
 
 layout(location = 0) in vec2 a_position;
 
-void main() {
+void main()
+{
     gl_Position = vec4(a_position, 0.0, 1.0);
 }
 )";
 
+
 static const char* FRAGMENT_SHADER = R"(
 #version 300 es
+
 precision mediump float;
 
 out vec4 outColor;
 
-void main() {
+void main()
+{
     outColor = vec4(
         0.15,
         0.55,
@@ -56,13 +76,39 @@ void main() {
 }
 )";
 
+
+// ============================================================
+// GL error helper
+// ============================================================
+
+static void checkGlError(const char* location)
+{
+    GLenum error;
+
+    while ((error = glGetError()) != GL_NO_ERROR)
+    {
+        LOGE(
+            "OpenGL error at %s: 0x%04x",
+            location,
+            error
+        );
+    }
+}
+
+
+// ============================================================
+// Shader compilation
+// ============================================================
+
 static GLuint compileShader(
     GLenum type,
     const char* source
-) {
+)
+{
     GLuint shader = glCreateShader(type);
 
-    if (shader == 0) {
+    if (shader == 0)
+    {
         LOGE("glCreateShader failed");
         return 0;
     }
@@ -84,8 +130,8 @@ static GLuint compileShader(
         &compiled
     );
 
-    if (compiled != GL_TRUE) {
-
+    if (compiled != GL_TRUE)
+    {
         GLint logLength = 0;
 
         glGetShaderiv(
@@ -94,9 +140,11 @@ static GLuint compileShader(
             &logLength
         );
 
-        if (logLength > 0) {
+        if (logLength > 0)
+        {
+            char* log = new char[logLength + 1];
 
-            char* log = new char[logLength];
+            log[0] = '\0';
 
             glGetShaderInfoLog(
                 shader,
@@ -105,6 +153,8 @@ static GLuint compileShader(
                 log
             );
 
+            log[logLength] = '\0';
+
             LOGE(
                 "Shader compilation failed:\n%s",
                 log
@@ -112,23 +162,37 @@ static GLuint compileShader(
 
             delete[] log;
         }
+        else
+        {
+            LOGE("Shader compilation failed with no log");
+        }
 
         glDeleteShader(shader);
 
         return 0;
     }
 
+    LOGI("Shader compiled successfully");
+
     return shader;
 }
 
-static bool createProgram() {
+
+// ============================================================
+// Program creation
+// ============================================================
+
+static bool createProgram()
+{
+    LOGI("Creating OpenGL shader program");
 
     GLuint vertexShader = compileShader(
         GL_VERTEX_SHADER,
         VERTEX_SHADER
     );
 
-    if (vertexShader == 0) {
+    if (vertexShader == 0)
+    {
         return false;
     }
 
@@ -137,8 +201,8 @@ static bool createProgram() {
         FRAGMENT_SHADER
     );
 
-    if (fragmentShader == 0) {
-
+    if (fragmentShader == 0)
+    {
         glDeleteShader(vertexShader);
 
         return false;
@@ -146,8 +210,8 @@ static bool createProgram() {
 
     g_program = glCreateProgram();
 
-    if (g_program == 0) {
-
+    if (g_program == 0)
+    {
         LOGE("glCreateProgram failed");
 
         glDeleteShader(vertexShader);
@@ -166,6 +230,12 @@ static bool createProgram() {
         fragmentShader
     );
 
+    glBindAttribLocation(
+        g_program,
+        0,
+        "a_position"
+    );
+
     glLinkProgram(g_program);
 
     GLint linked = GL_FALSE;
@@ -179,8 +249,8 @@ static bool createProgram() {
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
-    if (linked != GL_TRUE) {
-
+    if (linked != GL_TRUE)
+    {
         GLint logLength = 0;
 
         glGetProgramiv(
@@ -189,9 +259,11 @@ static bool createProgram() {
             &logLength
         );
 
-        if (logLength > 0) {
+        if (logLength > 0)
+        {
+            char* log = new char[logLength + 1];
 
-            char* log = new char[logLength];
+            log[0] = '\0';
 
             glGetProgramInfoLog(
                 g_program,
@@ -200,6 +272,8 @@ static bool createProgram() {
                 log
             );
 
+            log[logLength] = '\0';
+
             LOGE(
                 "Program linking failed:\n%s",
                 log
@@ -207,24 +281,43 @@ static bool createProgram() {
 
             delete[] log;
         }
+        else
+        {
+            LOGE("Program linking failed with no log");
+        }
 
         glDeleteProgram(g_program);
+
         g_program = 0;
 
         return false;
     }
 
-    LOGI("OpenGL shader program created");
+    LOGI(
+        "OpenGL shader program created successfully"
+    );
+
+    checkGlError("createProgram");
 
     return true;
 }
 
-static bool createTriangle() {
 
-    const GLfloat vertices[] = {
-         0.0f,  0.65f,
-        -0.65f, -0.55f,
-         0.65f, -0.55f
+// ============================================================
+// Triangle
+// ============================================================
+
+static bool createTriangle()
+{
+    LOGI("Creating triangle geometry");
+
+    const GLfloat vertices[] =
+    {
+         0.0f,  0.70f,
+
+        -0.70f, -0.60f,
+
+         0.70f, -0.60f
     };
 
     glGenVertexArrays(
@@ -237,9 +330,16 @@ static bool createTriangle() {
         &g_vbo
     );
 
-    if (g_vao == 0 || g_vbo == 0) {
+    if (g_vao == 0)
+    {
+        LOGE("glGenVertexArrays failed");
 
-        LOGE("Failed to create VAO/VBO");
+        return false;
+    }
+
+    if (g_vbo == 0)
+    {
+        LOGE("glGenBuffers failed");
 
         return false;
     }
@@ -276,36 +376,66 @@ static bool createTriangle() {
 
     glBindVertexArray(0);
 
-    LOGI("Triangle geometry created");
+    checkGlError("createTriangle");
+
+    LOGI(
+        "Triangle geometry created successfully"
+    );
 
     return true;
 }
 
-static bool initRenderer() {
 
-    if (!createProgram()) {
-        LOGE("Failed to create OpenGL program");
+// ============================================================
+// Renderer initialization
+// ============================================================
+
+static bool initRenderer()
+{
+    LOGI("Initializing renderer");
+
+    if (!createProgram())
+    {
+        LOGE(
+            "Failed to create shader program"
+        );
+
         return false;
     }
 
-    if (!createTriangle()) {
-        LOGE("Failed to create triangle");
+    if (!createTriangle())
+    {
+        LOGE(
+            "Failed to create triangle"
+        );
+
         return false;
     }
 
     glDisable(GL_DEPTH_TEST);
-
     glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
 
-    LOGI("Native renderer initialized");
+    checkGlError("initRenderer");
+
+    LOGI(
+        "Native renderer initialized"
+    );
 
     return true;
 }
 
-static void destroyRenderer() {
 
-    if (g_vbo != 0) {
+// ============================================================
+// Renderer destruction
+// ============================================================
 
+static void destroyRenderer()
+{
+    LOGI("Destroying renderer");
+
+    if (g_vbo != 0)
+    {
         glDeleteBuffers(
             1,
             &g_vbo
@@ -314,8 +444,8 @@ static void destroyRenderer() {
         g_vbo = 0;
     }
 
-    if (g_vao != 0) {
-
+    if (g_vao != 0)
+    {
         glDeleteVertexArrays(
             1,
             &g_vao
@@ -324,8 +454,8 @@ static void destroyRenderer() {
         g_vao = 0;
     }
 
-    if (g_program != 0) {
-
+    if (g_program != 0)
+    {
         glDeleteProgram(
             g_program
         );
@@ -333,28 +463,29 @@ static void destroyRenderer() {
         g_program = 0;
     }
 
-    LOGI("Native renderer destroyed");
+    LOGI(
+        "Native renderer destroyed"
+    );
 }
 
 
-/*
- * Forward declaration.
- *
- * initEgl() calls destroyEgl() when renderer
- * initialization fails, but the actual function
- * implementation is located below initEgl().
- */
-static void destroyEgl();
+// ============================================================
+// EGL initialization
+// ============================================================
 
+static bool initEgl()
+{
+    if (g_initialized)
+    {
+        LOGI(
+            "EGL already initialized"
+        );
 
-static bool initEgl() {
-
-    if (g_initialized) {
         return true;
     }
 
-    if (g_window == nullptr) {
-
+    if (g_window == nullptr)
+    {
         LOGE(
             "initEgl: ANativeWindow is null"
         );
@@ -362,16 +493,53 @@ static bool initEgl() {
         return false;
     }
 
+    // Get actual window dimensions.
+
+    int windowWidth =
+        ANativeWindow_getWidth(g_window);
+
+    int windowHeight =
+        ANativeWindow_getHeight(g_window);
+
+    if (windowWidth > 0)
+    {
+        g_width = windowWidth;
+    }
+
+    if (windowHeight > 0)
+    {
+        g_height = windowHeight;
+    }
+
+    LOGI(
+        "Native window size: %dx%d",
+        g_width,
+        g_height
+    );
+
+
+    // --------------------------------------------------------
+    // EGL display
+    // --------------------------------------------------------
+
     g_display = eglGetDisplay(
         EGL_DEFAULT_DISPLAY
     );
 
-    if (g_display == EGL_NO_DISPLAY) {
-
-        LOGE("eglGetDisplay failed");
+    if (g_display == EGL_NO_DISPLAY)
+    {
+        LOGE(
+            "eglGetDisplay failed: 0x%04x",
+            eglGetError()
+        );
 
         return false;
     }
+
+
+    // --------------------------------------------------------
+    // EGL initialize
+    // --------------------------------------------------------
 
     EGLint major = 0;
     EGLint minor = 0;
@@ -380,8 +548,8 @@ static bool initEgl() {
             g_display,
             &major,
             &minor
-        )) {
-
+        ))
+    {
         LOGE(
             "eglInitialize failed: 0x%04x",
             eglGetError()
@@ -398,8 +566,13 @@ static bool initEgl() {
         minor
     );
 
-    const EGLint configAttributes[] = {
 
+    // --------------------------------------------------------
+    // Choose config
+    // --------------------------------------------------------
+
+    const EGLint configAttributes[] =
+    {
         EGL_RENDERABLE_TYPE,
         EGL_OPENGL_ES3_BIT,
 
@@ -434,9 +607,8 @@ static bool initEgl() {
             &config,
             1,
             &numConfigs
-        ) ||
-        numConfigs == 0) {
-
+        ))
+    {
         LOGE(
             "eglChooseConfig failed: 0x%04x",
             eglGetError()
@@ -449,8 +621,30 @@ static bool initEgl() {
         return false;
     }
 
-    const EGLint contextAttributes[] = {
+    if (numConfigs == 0)
+    {
+        LOGE(
+            "eglChooseConfig returned zero configs"
+        );
 
+        eglTerminate(g_display);
+
+        g_display = EGL_NO_DISPLAY;
+
+        return false;
+    }
+
+    LOGI(
+        "EGL config selected"
+    );
+
+
+    // --------------------------------------------------------
+    // OpenGL ES 3 context
+    // --------------------------------------------------------
+
+    const EGLint contextAttributes[] =
+    {
         EGL_CONTEXT_CLIENT_VERSION,
         3,
 
@@ -464,8 +658,8 @@ static bool initEgl() {
         contextAttributes
     );
 
-    if (g_context == EGL_NO_CONTEXT) {
-
+    if (g_context == EGL_NO_CONTEXT)
+    {
         LOGE(
             "eglCreateContext failed: 0x%04x",
             eglGetError()
@@ -478,6 +672,15 @@ static bool initEgl() {
         return false;
     }
 
+    LOGI(
+        "EGL OpenGL ES 3 context created"
+    );
+
+
+    // --------------------------------------------------------
+    // Window surface
+    // --------------------------------------------------------
+
     g_surface = eglCreateWindowSurface(
         g_display,
         config,
@@ -485,8 +688,8 @@ static bool initEgl() {
         nullptr
     );
 
-    if (g_surface == EGL_NO_SURFACE) {
-
+    if (g_surface == EGL_NO_SURFACE)
+    {
         LOGE(
             "eglCreateWindowSurface failed: 0x%04x",
             eglGetError()
@@ -506,13 +709,22 @@ static bool initEgl() {
         return false;
     }
 
+    LOGI(
+        "EGL window surface created"
+    );
+
+
+    // --------------------------------------------------------
+    // Make context current
+    // --------------------------------------------------------
+
     if (!eglMakeCurrent(
             g_display,
             g_surface,
             g_surface,
             g_context
-        )) {
-
+        ))
+    {
         LOGE(
             "eglMakeCurrent failed: 0x%04x",
             eglGetError()
@@ -539,21 +751,66 @@ static bool initEgl() {
     }
 
     LOGI(
-        "OpenGL ES version: %s",
-        glGetString(GL_VERSION)
+        "EGL context is current"
+    );
+
+
+    // --------------------------------------------------------
+    // Swap interval
+    // --------------------------------------------------------
+
+    eglSwapInterval(
+        g_display,
+        1
+    );
+
+
+    // --------------------------------------------------------
+    // OpenGL information
+    // --------------------------------------------------------
+
+    const GLubyte* version =
+        glGetString(GL_VERSION);
+
+    const GLubyte* renderer =
+        glGetString(GL_RENDERER);
+
+    const GLubyte* vendor =
+        glGetString(GL_VENDOR);
+
+    const GLubyte* shading =
+        glGetString(GL_SHADING_LANGUAGE_VERSION);
+
+    LOGI(
+        "OpenGL version: %s",
+        version ? reinterpret_cast<const char*>(version) : "NULL"
     );
 
     LOGI(
         "OpenGL renderer: %s",
-        glGetString(GL_RENDERER)
+        renderer ? reinterpret_cast<const char*>(renderer) : "NULL"
     );
 
     LOGI(
         "OpenGL vendor: %s",
-        glGetString(GL_VENDOR)
+        vendor ? reinterpret_cast<const char*>(vendor) : "NULL"
     );
 
-    if (!initRenderer()) {
+    LOGI(
+        "GLSL version: %s",
+        shading ? reinterpret_cast<const char*>(shading) : "NULL"
+    );
+
+
+    // --------------------------------------------------------
+    // Renderer
+    // --------------------------------------------------------
+
+    if (!initRenderer())
+    {
+        LOGE(
+            "Renderer initialization failed"
+        );
 
         destroyEgl();
 
@@ -563,23 +820,49 @@ static bool initEgl() {
     g_initialized = true;
 
     LOGI(
-        "KrispyClient EGL + renderer initialized"
+        "KrispyClient EGL + renderer initialized successfully"
     );
 
     return true;
 }
 
 
-static void destroyEgl() {
+// ============================================================
+// EGL destruction
+// ============================================================
 
-    if (g_display == EGL_NO_DISPLAY) {
+static void destroyEgl()
+{
+    LOGI(
+        "destroyEgl()"
+    );
 
+    if (g_display == EGL_NO_DISPLAY)
+    {
         g_initialized = false;
 
         return;
     }
 
-    destroyRenderer();
+    // The OpenGL objects must be destroyed
+    // while the context is still current.
+
+    if (g_context != EGL_NO_CONTEXT)
+    {
+        if (!eglMakeCurrent(
+                g_display,
+                g_surface,
+                g_surface,
+                g_context
+            ))
+        {
+            LOGE(
+                "Failed to make EGL context current during destroy"
+            );
+        }
+
+        destroyRenderer();
+    }
 
     eglMakeCurrent(
         g_display,
@@ -588,39 +871,138 @@ static void destroyEgl() {
         EGL_NO_CONTEXT
     );
 
-    if (g_surface != EGL_NO_SURFACE) {
-
+    if (g_surface != EGL_NO_SURFACE)
+    {
         eglDestroySurface(
             g_display,
             g_surface
         );
+
+        g_surface = EGL_NO_SURFACE;
     }
 
-    if (g_context != EGL_NO_CONTEXT) {
-
+    if (g_context != EGL_NO_CONTEXT)
+    {
         eglDestroyContext(
             g_display,
             g_context
         );
+
+        g_context = EGL_NO_CONTEXT;
     }
 
-    eglTerminate(g_display);
+    eglTerminate(
+        g_display
+    );
 
     g_display = EGL_NO_DISPLAY;
-    g_surface = EGL_NO_SURFACE;
-    g_context = EGL_NO_CONTEXT;
 
     g_initialized = false;
 
-    LOGI("EGL destroyed");
+    LOGI(
+        "EGL destroyed"
+    );
 }
 
 
-static void renderFrame() {
+// ============================================================
+// Render frame
+// ============================================================
 
-    if (!g_initialized) {
+static void renderFrame()
+{
+    if (!g_initialized)
+    {
+        LOGE(
+            "renderFrame called while renderer is not initialized"
+        );
+
         return;
     }
+
+    if (g_display == EGL_NO_DISPLAY)
+    {
+        LOGE(
+            "renderFrame: invalid EGL display"
+        );
+
+        return;
+    }
+
+    if (g_surface == EGL_NO_SURFACE)
+    {
+        LOGE(
+            "renderFrame: invalid EGL surface"
+        );
+
+        return;
+    }
+
+    if (g_context == EGL_NO_CONTEXT)
+    {
+        LOGE(
+            "renderFrame: invalid EGL context"
+        );
+
+        return;
+    }
+
+
+    // Make absolutely sure this thread owns the context.
+
+    if (!eglMakeCurrent(
+            g_display,
+            g_surface,
+            g_surface,
+            g_context
+        ))
+    {
+        LOGE(
+            "renderFrame: eglMakeCurrent failed: 0x%04x",
+            eglGetError()
+        );
+
+        return;
+    }
+
+
+    // Update dimensions.
+
+    int windowWidth =
+        ANativeWindow_getWidth(g_window);
+
+    int windowHeight =
+        ANativeWindow_getHeight(g_window);
+
+    if (windowWidth > 0)
+    {
+        g_width = windowWidth;
+    }
+
+    if (windowHeight > 0)
+    {
+        g_height = windowHeight;
+    }
+
+    if (g_width <= 0)
+    {
+        g_width = 1;
+    }
+
+    if (g_height <= 0)
+    {
+        g_height = 1;
+    }
+
+
+    LOGI(
+        "Rendering frame: %dx%d",
+        g_width,
+        g_height
+    );
+
+
+    // Viewport.
 
     glViewport(
         0,
@@ -628,6 +1010,9 @@ static void renderFrame() {
         g_width,
         g_height
     );
+
+
+    // Clear screen.
 
     glClearColor(
         0.03f,
@@ -640,9 +1025,28 @@ static void renderFrame() {
         GL_COLOR_BUFFER_BIT
     );
 
-    glUseProgram(g_program);
+    checkGlError("glClear");
 
-    glBindVertexArray(g_vao);
+
+    // Use shader.
+
+    glUseProgram(
+        g_program
+    );
+
+    checkGlError("glUseProgram");
+
+
+    // Bind triangle.
+
+    glBindVertexArray(
+        g_vao
+    );
+
+    checkGlError("glBindVertexArray");
+
+
+    // Draw.
 
     glDrawArrays(
         GL_TRIANGLES,
@@ -650,35 +1054,57 @@ static void renderFrame() {
         3
     );
 
+    checkGlError("glDrawArrays");
+
+
+    // Unbind.
+
     glBindVertexArray(0);
 
     glUseProgram(0);
 
+
+    // Present.
+
     if (!eglSwapBuffers(
             g_display,
             g_surface
-        )) {
-
+        ))
+    {
         LOGE(
             "eglSwapBuffers failed: 0x%04x",
             eglGetError()
         );
+
+        return;
     }
+
+    LOGI(
+        "Frame presented successfully"
+    );
 }
 
+
+// ============================================================
+// JNI: version
+// ============================================================
 
 extern "C"
 JNIEXPORT jstring JNICALL
 Java_com_krispyclient_launcher_NativeBridge_getNativeVersion(
     JNIEnv* env,
     jobject
-) {
-
+)
+{
     return env->NewStringUTF(
-        "KrispyClient Native Renderer 0.4"
+        "KrispyClient Native Renderer 0.5"
     );
 }
 
+
+// ============================================================
+// JNI: surface created
+// ============================================================
 
 extern "C"
 JNIEXPORT void JNICALL
@@ -686,14 +1112,22 @@ Java_com_krispyclient_launcher_NativeBridge_nativeSurfaceCreated(
     JNIEnv* env,
     jobject,
     jobject surface
-) {
+)
+{
+    LOGI(
+        "========================================"
+    );
 
     LOGI(
         "nativeSurfaceCreated called"
     );
 
-    if (surface == nullptr) {
+    LOGI(
+        "========================================"
+    );
 
+    if (surface == nullptr)
+    {
         LOGE(
             "Surface is null"
         );
@@ -701,144 +1135,36 @@ Java_com_krispyclient_launcher_NativeBridge_nativeSurfaceCreated(
         return;
     }
 
-    if (g_initialized) {
 
+    // Destroy old EGL state.
+
+    if (g_initialized ||
+        g_display != EGL_NO_DISPLAY)
+    {
         destroyEgl();
     }
 
-    if (g_window != nullptr) {
 
+    // Release old native window.
+
+    if (g_window != nullptr)
+    {
         ANativeWindow_release(
             g_window
         );
 
         g_window = nullptr;
     }
+
+
+    // Convert Java Surface to ANativeWindow.
 
     g_window = ANativeWindow_fromSurface(
         env,
         surface
     );
 
-    if (g_window == nullptr) {
-
+    if (g_window == nullptr)
+    {
         LOGE(
-            "ANativeWindow_fromSurface failed"
-        );
-
-        return;
-    }
-
-    if (!initEgl()) {
-
-        LOGE(
-            "EGL initialization failed"
-        );
-
-        ANativeWindow_release(
-            g_window
-        );
-
-        g_window = nullptr;
-
-        return;
-    }
-
-    renderFrame();
-}
-
-
-extern "C"
-JNIEXPORT void JNICALL
-Java_com_krispyclient_launcher_NativeBridge_nativeSurfaceChanged(
-    JNIEnv*,
-    jobject,
-    jint width,
-    jint height
-) {
-
-    g_width = static_cast<int>(width);
-    g_height = static_cast<int>(height);
-
-    LOGI(
-        "Surface changed: %dx%d",
-        g_width,
-        g_height
-    );
-
-    renderFrame();
-}
-
-
-extern "C"
-JNIEXPORT void JNICALL
-Java_com_krispyclient_launcher_NativeBridge_nativeSurfaceDestroyed(
-    JNIEnv*,
-    jobject
-) {
-
-    LOGI(
-        "nativeSurfaceDestroyed called"
-    );
-
-    destroyEgl();
-
-    if (g_window != nullptr) {
-
-        ANativeWindow_release(
-            g_window
-        );
-
-        g_window = nullptr;
-    }
-}
-
-
-extern "C"
-JNIEXPORT void JNICALL
-Java_com_krispyclient_launcher_NativeBridge_nativeResume(
-    JNIEnv*,
-    jobject
-) {
-
-    LOGI(
-        "KrispyClient native resume"
-    );
-}
-
-
-extern "C"
-JNIEXPORT void JNICALL
-Java_com_krispyclient_launcher_NativeBridge_nativePause(
-    JNIEnv*,
-    jobject
-) {
-
-    LOGI(
-        "KrispyClient native pause"
-    );
-}
-
-
-extern "C"
-JNIEXPORT void JNICALL
-Java_com_krispyclient_launcher_NativeBridge_nativeDestroy(
-    JNIEnv*,
-    jobject
-) {
-
-    LOGI(
-        "KrispyClient native destroy"
-    );
-
-    destroyEgl();
-
-    if (g_window != nullptr) {
-
-        ANativeWindow_release(
-            g_window
-        );
-
-        g_window = nullptr;
-    }
-}
+         
